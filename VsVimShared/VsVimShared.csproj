@@ -71,8 +71,10 @@
     <Compile Include="CommandKeyBindingSnapshot.cs" />
     <Compile Include="CommandsSnapshot.cs" />
     <Compile Include="Constants.cs" />
+    <Compile Include="TransitionEditCommandNode.cs" />
     <Compile Include="EditCommand.cs" />
     <Compile Include="EditCommandKind.cs" />
+    <Compile Include="EditCommandNode.cs" />
     <Compile Include="Extensions.cs" />
     <Compile Include="Implementation\ExternalEdit\ExternalEditMonitor.cs" />
     <Compile Include="Implementation\ExternalEdit\ExternalEditorManager.cs" />
