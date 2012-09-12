@@ -52,6 +52,7 @@ namespace VsVim
         private readonly IDisplayWindowBroker _broker;
         private readonly IResharperUtil _resharperUtil;
         private readonly IKeyUtil _keyUtil;
+        private readonly IOleUtil _oleUtil;
         private IOleCommandTarget _nextTarget;
 
         private VsCommandTarget(
@@ -69,6 +70,7 @@ namespace VsVim
             _broker = broker;
             _resharperUtil = resharperUtil;
             _keyUtil = keyUtil;
+            _oleUtil = vsAdapter.OleUtil;
         }
 
         /// <summary>
@@ -328,7 +330,7 @@ namespace VsVim
         /// <summary>
         /// Try and convert the Visual Studio command to it's equivalent KeyInput
         /// </summary>
-        internal bool TryConvert(Guid commandGroup, uint commandId, IntPtr variantIn, out EditCommand editCommand)
+        internal bool TryConvert(Guid commandGroup, uint id, IntPtr variantIn, out EditCommand editCommand)
         {
             editCommand = null;
 
@@ -346,7 +348,8 @@ namespace VsVim
             }
 
             var modifiers = _keyUtil.GetKeyModifiers(_vsAdapter.KeyboardDevice.Modifiers);
-            if (!OleCommandUtil.TryConvert(commandGroup, commandId, variantIn, modifiers, out editCommand))
+            var commandId = new CommandId(commandGroup, id);
+            if (!_oleUtil.TryConvert(commandId, variantIn, modifiers, out editCommand))
             {
                 return false;
             }

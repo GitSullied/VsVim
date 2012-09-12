@@ -36,6 +36,11 @@ namespace VsVim
         IVsEditorAdaptersFactoryService EditorAdapter { get; }
 
         /// <summary>
+        /// The IOleUtil for this instance of Visual Studio
+        /// </summary>
+        IOleUtil OleUtil { get; }
+
+        /// <summary>
         /// The KeyboardDevice currently in use
         /// </summary>
         KeyboardDevice KeyboardDevice { get; }

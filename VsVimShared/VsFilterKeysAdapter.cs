@@ -37,6 +37,7 @@ namespace VsVim
         private readonly IVsCodeWindow _codeWindow;
         private readonly IVimBuffer _buffer;
         private readonly IVsAdapter _vsAdapter;
+        private readonly IOleUtil _oleUtil;
 
         internal VsFilterKeysAdapter(
             IVsFilterKeys filterKeys,
@@ -48,6 +49,7 @@ namespace VsVim
             _buffer = buffer;
             _vsAdapter = vsAdapter;
             _codeWindow = codeWindow;
+            _oleUtil = vsAdapter.OleUtil;
 
             _buffer.Closed += delegate { Uninstall(); };
         }
@@ -67,12 +69,11 @@ namespace VsVim
             return hr;
         }
 
-        internal bool IsEditCommand(Guid commandGroup, uint commandId)
+        internal bool IsEditCommand(Guid commandGroup, uint id)
         {
+            var commandId = new CommandId(commandGroup, id);
             EditCommand command;
-            return 
-                OleCommandUtil.TryConvert(commandGroup, commandId, IntPtr.Zero, KeyModifiers.None, out command) && 
-                command.HasKeyInput;
+            return _oleUtil.TryConvert(commandId, out command) && command.HasKeyInput;
         }
 
         /// <summary>
