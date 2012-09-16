@@ -14,6 +14,7 @@ using Vim.UI.Wpf.Implementation.Misc;
 using Vim.UI.Wpf.Implementation.WordCompletion;
 using Vim.UnitTest.Exports;
 using Vim.UnitTest.Mock;
+using System.Diagnostics;
 
 namespace Vim.UnitTest
 {
@@ -131,6 +132,10 @@ namespace Vim.UnitTest
 
             // Don't let the personal VimRc of the user interfere with the unit tests
             _vim.AutoLoadVimRc = false;
+
+            // Don't show trace information in the unit tests.  It really clutters the output in an
+            // xUnit run
+            VimTrace.TraceSwitch.Level = TraceLevel.Off;
         }
 
         public virtual void Dispose()
@@ -287,7 +292,7 @@ namespace Vim.UnitTest
             IFoldManager foldManager = null,
             InsertUtil insertUtil = null)
         {
-            motionUtil = motionUtil ?? new MotionUtil(vimBufferData);
+            motionUtil = motionUtil ?? new MotionUtil(vimBufferData, operations);
             operations = operations ?? CommonOperationsFactory.GetCommonOperations(vimBufferData);
             foldManager = foldManager ?? VimUtil.CreateFoldManager(vimBufferData.TextView, vimBufferData.StatusUtil);
             insertUtil = insertUtil ?? new InsertUtil(vimBufferData, operations);

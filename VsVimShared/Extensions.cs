@@ -27,6 +27,22 @@ namespace VsVim
     {
         #region Command
 
+        public static bool TryGetCommandId(this Command command, out CommandId commandId)
+        {
+            try
+            {
+                var group = Guid.Parse(command.Guid);
+                var id = unchecked((uint)command.ID);
+                commandId = new CommandId(group, id);
+                return true;
+            }
+            catch 
+            {
+                commandId = default(CommandId);
+                return false;
+            }
+        }
+
         /// <summary>
         /// Get the binding strings for this Command.  Digs through the various ways a 
         /// binding string can be stored and returns a uniform result
@@ -85,12 +101,18 @@ namespace VsVim
 
         private static IEnumerable<CommandKeyBinding> GetCommandKeyBindingsHelper(Command command)
         {
+            CommandId commandId;
+            if (!command.TryGetCommandId(out commandId))
+            {
+                yield break;
+            }
+
             foreach (var cur in command.GetBindings())
             {
                 KeyBinding binding;
                 if (KeyBinding.TryParse(cur, out binding))
                 {
-                    yield return new CommandKeyBinding(command.Name, binding);
+                    yield return new CommandKeyBinding(commandId, command.Name, binding);
                 }
             }
         }
@@ -954,10 +976,10 @@ namespace VsVim
 
         internal static int Exec(this IOleCommandTarget oleCommandTarget, OleCommandData oleCommandData)
         {
-            Guid commandGroup = oleCommandData.CommandGroup;
+            Guid commandGroup = oleCommandData.Group;
             return oleCommandTarget.Exec(
                 ref commandGroup,
-                oleCommandData.CommandId,
+                oleCommandData.Id,
                 oleCommandData.CommandExecOpt,
                 oleCommandData.VariantIn,
                 oleCommandData.VariantOut);
@@ -971,9 +993,9 @@ namespace VsVim
 
         internal static int QueryStatus(this IOleCommandTarget oleCommandTarget, OleCommandData oleCommandData, out OLECMD command)
         {
-            var commandGroup = oleCommandData.CommandGroup;
+            var commandGroup = oleCommandData.Group;
             var cmds = new OLECMD[1];
-            cmds[0] = new OLECMD { cmdID = oleCommandData.CommandId };
+            cmds[0] = new OLECMD { cmdID = oleCommandData.Id };
             var result = oleCommandTarget.QueryStatus(
                 ref commandGroup,
                 1,
