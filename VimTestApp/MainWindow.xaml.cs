@@ -156,7 +156,6 @@ namespace VimTestApp
             {
                 builder.AppendFormat("{0} - {1}{2}", i, (char)i, Environment.NewLine);
             }
-            builder.AppendFormat("{0} - {1}{2}", 127, (char)127, Environment.NewLine);
             builder.AppendLine("End");
             _textBuffer.Insert(0, builder.ToString());
         }
