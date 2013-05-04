@@ -1,0 +1,26 @@
+﻿<Window x:Class="VimApp.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="MainWindow" Height="350" Width="525">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <Menu IsMainMenu="True" Grid.Row="0">
+            <MenuItem Header="Custom">
+                <MenuItem Header="Issue 1074">
+                    <MenuItem Header="Set Scenario" Click="OnLeaderSetClick" />
+                    <MenuItem Header="type ö" Click="OnLeaderTypeClick" />
+                </MenuItem>
+                <MenuItem Header="Insert Control Characters" Click="OnInsertControlCharactersClick" />
+            </MenuItem>
+        </Menu>
+
+        <DockPanel LastChildFill="True" Name="m_dockPanel" Grid.Row="1">
+
+        </DockPanel>
+
+    </Grid>
+</Window>
