@@ -608,9 +608,9 @@ type MotionArgument = {
         let motionCount = x.MotionCount |> OptionUtil.getOrDefault 1
         operatorCount * motionCount
 
-/// Char searches are interesting because they are definide in one IVimBuffer
+/// Char searches are interesting because they are defined in one IVimBuffer
 /// and can be repeated in any IVimBuffer.  Use a discriminated union here 
-/// to name the motion without tieing it to a given IVimBuffer or ITextView 
+/// to name the motion without binding it to a given IVimBuffer or ITextView 
 /// which would increase the chance of an accidental memory leak
 [<RequireQualifiedAccess>]
 type CharSearchKind  =
@@ -670,7 +670,7 @@ type Motion =
     /// not return a value
     | AllSentence
 
-    /// Move to the begining of the line.  Interestingly since this command is bound to the '0' it 
+    /// Move to the beginning of the line.  Interestingly since this command is bound to the '0' it 
     /// can't be associated with a count.  Doing a command like 30 binds as count 30 vs. count 3 
     /// for command '0'
     | BeginingOfLine
@@ -755,12 +755,12 @@ type Motion =
     | LineInMiddleOfVisibleWindow
 
     /// Get the motion to the specified mark.  This is typically accessed via
-    /// the ` (backtick) operator and results in an exclusive motion
+    /// the ` (back tick) operator and results in an exclusive motion
     | Mark of LocalMark
 
     /// Get the motion to the line of the specified mark.  This is typically
     /// accessed via the ' (single quote) operator and results in a 
-    /// linewise motion
+    /// line wise motion
     | MarkLine of LocalMark
 
     /// Get the matching token from the next token on the line.  This is used to implement
@@ -850,7 +850,7 @@ type ModeKind =
     | SelectBlock = 11
     | ExternalEdit = 12
 
-    /// Initial mode for an IVimBuffer.  It will maintain this mode until the underyling
+    /// Initial mode for an IVimBuffer.  It will maintain this mode until the underlying
     /// ITextView completes it's initialization and allows the IVimBuffer to properly 
     /// transition to the mode matching it's underlying IVimTextBuffer
     | Uninitialized = 13
@@ -1071,7 +1071,7 @@ module KeyInputSetUtil =
 [<RequireQualifiedAccess>]
 type KeyMappingResult =
 
-    /// The values were mappend completely and require no further mapping. This 
+    /// The values were mapped completely and require no further mapping. This 
     /// could be a result of a no-op mapping though
     | Mapped of KeyInputSet
 
@@ -1091,30 +1091,68 @@ type KeyMappingResult =
 /// complications of tracking a visual character selection across edits to the buffer
 /// there would really be no need for this and we could instead just represent it as 
 /// a SnapshotSpan
+///
+/// The other reason this type is necessary is to differentiate several empty line 
+/// cases.  Essentially how empty line should be handled when the span includes the 
+/// line break of the line above 
 [<StructuralEquality>]
 [<NoComparison>]
 [<Struct>]
 [<DebuggerDisplay("{ToString()}")>]
-type CharacterSpan
-    (
-        _start : SnapshotPoint,
-        _lineCount : int,
-        _lastLineLength : int
-    ) =
+type CharacterSpan = 
 
-    member x.Snapshot = _start.Snapshot
+    val private _start : SnapshotPoint
+
+    val private _lineCount : int
+
+    val private _lastLineLength : int
+
+    new (start : SnapshotPoint, lineCount : int, lastLineLength : int) =
+
+        // Don't let the last line of the CharacterSpan end partially into a line 
+        // break.  Encompass the entire line break instead 
+        let number = start.GetContainingLine().LineNumber + (lineCount - 1)
+        let line = SnapshotUtil.GetLineOrLast start.Snapshot number
+        let lastLineLength = 
+            if line.Length = 0 then
+                line.LengthIncludingLineBreak
+            elif lastLineLength > line.Length then
+                line.LengthIncludingLineBreak
+            else
+                lastLineLength
+        { 
+            _start = start
+            _lineCount = lineCount
+            _lastLineLength = lastLineLength }
+
+    new (span : SnapshotSpan) = 
+        let lineCount = SnapshotSpanUtil.GetLineCount span
+        let lastLine = SnapshotSpanUtil.GetLastLine span
+        let lastLineLength = 
+            if lineCount = 1 then
+                span.End.Position - span.Start.Position
+            else
+                let diff = span.End.Position - lastLine.Start.Position
+                max 0 diff
+        CharacterSpan(span.Start, lineCount, lastLineLength)
+
+    new (startPoint : SnapshotPoint, endPoint: SnapshotPoint) =
+        let span = SnapshotSpan(startPoint, endPoint)
+        CharacterSpan(span)
+
+    member x.Snapshot = x._start.Snapshot
 
     member x.StartLine = SnapshotPointUtil.GetContainingLine x.Start
 
-    member x.Start =  _start
+    member x.Start =  x._start
 
-    member x.LineCount = _lineCount
+    member x.LineCount = x._lineCount
 
-    member x.LastLineLength = _lastLineLength
+    member x.LastLineLength = x._lastLineLength
 
     /// The last line in the CharacterSpan
     member x.LastLine = 
-        let number = x.StartLine.LineNumber + (_lineCount - 1)
+        let number = x.StartLine.LineNumber + (x._lineCount - 1)
         SnapshotUtil.GetLineOrLast x.Snapshot number
 
     /// The last point included in the CharacterSpan
@@ -1130,14 +1168,14 @@ type CharacterSpan
         let snapshot = x.Snapshot
         let lastLine = x.LastLine
         let offset = 
-            if _lineCount = 1 then
+            if x._lineCount = 1 then
                 // For a single line we need to apply the offset past the start point
-                SnapshotPointUtil.GetColumn _start + _lastLineLength
+                SnapshotPointUtil.GetColumn x._start + x._lastLineLength
             else
-                _lastLineLength
+                x._lastLineLength
 
         // The original SnapshotSpan could extend into the line break and hence we must
-        // consider that here.  The most common case for this occuring is when the caret
+        // consider that here.  The most common case for this occurring is when the caret
         // in visual mode is on the first column of an empty line.  In that case the caret
         // is really in the line break so End is one past that
         let endPoint = SnapshotLineUtil.GetOffsetOrEndIncludingLineBreak offset lastLine
@@ -1145,30 +1183,28 @@ type CharacterSpan
         // Make sure that we don't create a negative SnapshotSpan.  Really we should
         // be verifying the arguments to ensure we don't but until we do fix up
         // potential errors here
-        if _start.Position <= endPoint.Position then
+        if x._start.Position <= endPoint.Position then
             endPoint
         else
-            _start
+            x._start
 
     member x.Span = SnapshotSpan(x.Start, x.End)
 
     member x.Length = x.Span.Length
 
+    member x.IncludeLastLineLineBreak = x.End.Position > x.LastLine.End.Position
+
+    member internal x.MaybeAdjustToIncludeLastLineLineBreak() = 
+        if x.End = x.LastLine.End then
+            let endPoint = x.LastLine.EndIncludingLineBreak
+            CharacterSpan(x.Start, endPoint)
+        else
+            x
+
     override x.ToString() = x.Span.ToString()
 
     static member op_Equality(this,other) = System.Collections.Generic.EqualityComparer<CharacterSpan>.Default.Equals(this,other)
     static member op_Inequality(this,other) = not (System.Collections.Generic.EqualityComparer<CharacterSpan>.Default.Equals(this,other))
-
-    static member CreateForSpan (span : SnapshotSpan) = 
-        let lineCount = SnapshotSpanUtil.GetLineCount span
-        let lastLine = SnapshotSpanUtil.GetLastLine span
-        let lastLineLength = 
-            if lineCount = 1 then
-                span.End.Position - span.Start.Position
-            else
-                let diff = span.End.Position - lastLine.Start.Position
-                max 0 diff
-        CharacterSpan(span.Start, lineCount, lastLineLength)
 
 /// Represents the span for a Visual Block mode selection
 [<StructuralEquality>]
@@ -1248,7 +1284,7 @@ type BlockSpan
     static member op_Equality(this,other) = System.Collections.Generic.EqualityComparer<BlockSpan>.Default.Equals(this,other)
     static member op_Inequality(this,other) = not (System.Collections.Generic.EqualityComparer<BlockSpan>.Default.Equals(this,other))
 
-    /// Create a BlockSpan for the given SnapshotSpan.  The returned BlockSpan will have a minumum of 1 for
+    /// Create a BlockSpan for the given SnapshotSpan.  The returned BlockSpan will have a minimum of 1 for
     /// height and width.  The start of the BlockSpan is not necessarily the Start of the SnapshotSpan
     /// as an End column which occurs before the start could cause the BlockSpan start to be before the 
     /// SnapshotSpan start
@@ -1291,14 +1327,13 @@ type BlockCaretLocation =
 [<DebuggerDisplay("{ToString()}")>]
 type VisualSpan =
 
-    /// A characterwise span.  The 'End' of the span is not selected.
+    /// A character wise span.  The 'End' of the span is not selected.
     | Character of CharacterSpan
 
-    /// A linewise span
+    /// A line wise span
     | Line of SnapshotLineRange
 
-    /// A block span.  The first int in the number of lines and the second one is the 
-    /// width of the selection
+    /// A block span.  
     | Block of BlockSpan
 
     with
@@ -1310,7 +1345,7 @@ type VisualSpan =
         | VisualSpan.Line range -> [range.ExtentIncludingLineBreak] |> Seq.ofList
         | VisualSpan.Block blockSpan -> blockSpan.BlockSpans :> SnapshotSpan seq
 
-    member x.SpansWithOverlap (localSetting:IVimLocalSettings) = 
+    member x.SpansWithOverlap (localSetting : IVimLocalSettings) = 
         match x with 
         | VisualSpan.Block blockSpan -> seq (blockSpan.BlockSpansWithOverlap(localSetting))
         | _ -> (Seq.map (fun x -> (0, x, 0))) x.Spans
@@ -1367,6 +1402,15 @@ type VisualSpan =
         | VisualSpan.Block _ -> VisualKind.Block
         | VisualSpan.Line _ -> VisualKind.Line
 
+    member x.AdjustForExtendIntoLineBreak extendIntoLineBreak = 
+        if extendIntoLineBreak then
+            match x with
+            | Character characterSpan -> characterSpan.MaybeAdjustToIncludeLastLineLineBreak() |> VisualSpan.Character
+            | Line _ -> x
+            | Block _ -> x
+        else
+            x
+
     /// Select the given VisualSpan in the ITextView
     member x.Select (textView : ITextView) path =
 
@@ -1390,7 +1434,11 @@ type VisualSpan =
 
         match x with
         | Character characterSpan ->
-            let endPoint = characterSpan.End
+            let endPoint = 
+                if characterSpan.IncludeLastLineLineBreak then
+                    SnapshotPointUtil.AddOneOrCurrent characterSpan.LastLine.End
+                else
+                    characterSpan.End
             selectSpan characterSpan.Start endPoint
         | Line lineRange ->
             selectSpan lineRange.Start lineRange.EndIncludingLineBreak
@@ -1414,7 +1462,8 @@ type VisualSpan =
         match visualKind with
         | VisualKind.Character ->
             let startPoint, endPoint = SnapshotPointUtil.OrderAscending anchorPoint activePoint
-            SnapshotSpan(startPoint, endPoint) |> CharacterSpan.CreateForSpan |> Character
+            let characterSpan = CharacterSpan(startPoint, endPoint)
+            Character characterSpan
         | VisualKind.Line ->
 
             let startPoint, endPoint = SnapshotPointUtil.OrderAscending anchorPoint activePoint
@@ -1464,11 +1513,21 @@ type VisualSpan =
         else
             let anchorPoint = selection.AnchorPoint.Position
             let activePoint = selection.ActivePoint.Position 
-            VisualSpan.CreateForSelectionPoints visualKind anchorPoint activePoint
+
+            // Need to special case the selection ending in, and encompassing, an empty line.  Once you 
+            // get rid of the virtual points here it's impossible to distinguish from the case where the 
+            // selection ends in the line above instead.  
+            if visualKind = VisualKind.Character && selection.End.Position.GetContainingLine().Length = 0 then
+                let endPoint = SnapshotPointUtil.AddOneOrCurrent selection.End.Position 
+                let characterSpan = CharacterSpan(selection.Start.Position, endPoint)
+                Character characterSpan
+            else
+                let visualSpan = VisualSpan.CreateForSelectionPoints visualKind anchorPoint activePoint
+                visualSpan.AdjustForExtendIntoLineBreak selection.End.IsInVirtualSpace
 
     static member CreateForSpan (span : SnapshotSpan) visualKind =
         match visualKind with
-        | VisualKind.Character -> span |> CharacterSpan.CreateForSpan |> Character
+        | VisualKind.Character -> CharacterSpan(span) |> Character
         | VisualKind.Line -> span |> SnapshotLineRangeUtil.CreateForSpan |> Line
         | VisualKind.Block -> span |> BlockSpan.CreateForSpan |> Block
 
@@ -1484,10 +1543,10 @@ type VisualSpan =
 [<NoComparison>] 
 type VisualSelection =
 
-    /// The underlying span and whether or not this is a forward looking span
+    /// The underlying span and whether or not this is a forward looking span.  
     | Character of CharacterSpan * Path
 
-    /// The underlynig range, whether or not is forwards or backwards and the int 
+    /// The underlying range, whether or not is forwards or backwards and the int 
     /// is which column in the range the caret should be placed in
     | Line of SnapshotLineRange * Path * int 
 
@@ -1519,6 +1578,17 @@ type VisualSelection =
         | Line (lineRange, _, _) -> VisualSpan.Line lineRange
         | Block (blockSpan, _) -> VisualSpan.Block blockSpan
 
+    member x.AdjustForExtendIntoLineBreak extendIntoLineBreak = 
+        if extendIntoLineBreak then
+            match x with
+            | Character (characterSpan, path) -> 
+                let characterSpan = characterSpan.MaybeAdjustToIncludeLastLineLineBreak()
+                VisualSelection.Character (characterSpan, path)
+            | Line _ -> x
+            | Block _ -> x
+        else
+            x
+
     /// Get the VisualSelection information adjusted for the given selection kind.  This is only useful 
     /// when a VisualSelection is created from the caret position and the selection needs to be adjusted
     /// to include or exclude the caret.  
@@ -1532,7 +1602,7 @@ type VisualSelection =
             | Character (characterSpan, path) -> 
                 // The span decreases by a single character in exclusive 
                 let endPoint = characterSpan.Last |> OptionUtil.getOrDefault characterSpan.Start
-                let characterSpan = SnapshotSpan(characterSpan.Start, endPoint) |> CharacterSpan.CreateForSpan
+                let characterSpan = CharacterSpan(SnapshotSpan(characterSpan.Start, endPoint))
                 VisualSelection.Character (characterSpan, path)
             | Line _ ->
                 // The span isn't effected
@@ -1549,22 +1619,30 @@ type VisualSelection =
     member x.GetCaretPoint selectionKind = 
 
         let getAdjustedEnd (span : SnapshotSpan) = 
-            match selectionKind with
-            | SelectionKind.Exclusive -> span.End
-            | SelectionKind.Inclusive -> 
-                if span.Length > 0 then
-                    SnapshotPointUtil.SubtractOne span.End
-                else
-                    span.End
+            if span.Length = 0 then
+                span.Start
+            else
+                match selectionKind with
+                | SelectionKind.Exclusive -> span.End
+                | SelectionKind.Inclusive -> 
+                    if span.Length > 0 then
+                        SnapshotPointUtil.SubtractOne span.End
+                    else
+                        span.End
 
         match x with
         | Character (characterSpan, path) ->
             // The caret is either positioned at the start or the end of the selected
             // SnapshotSpan
-            if path.IsPathForward && characterSpan.Length > 0 then
-                getAdjustedEnd characterSpan.Span
-            else
-                characterSpan.Start
+            match path with
+            | Path.Forward ->
+                if characterSpan.LastLine.Length = 0 then
+                    // Need to special case the empty last line because there is no character which
+                    // isn't inside the line break here.  Just return the start as the caret position
+                    characterSpan.LastLine.Start
+                else
+                    getAdjustedEnd characterSpan.Span
+            | Path.Backward -> characterSpan.Start
 
         | Line (snapshotLineRange, path, column) ->
 
@@ -1592,7 +1670,7 @@ type VisualSelection =
 
     /// Select the given VisualSpan in the ITextView
     member x.Select (textView : ITextView) =
-        let path = 
+        let path =
             match x with
             | Character (_, path) -> path
             | Line (_, path, _) -> path
@@ -1634,8 +1712,9 @@ type VisualSelection =
 
             Block (blockSpan, blockCaretLocation)
 
-    /// Create a VisualSelection for the given anchor point and caret.  The caret is assumed to 
-    /// be the last point included in the selection (inclusive)
+    /// Create a VisualSelection for the given anchor point and caret.  The position, anchorPoint or 
+    /// caretPoint, which is greater position wise is the last point included in the selection.  It
+    /// is inclusive
     static member CreateForPoints visualKind (anchorPoint : SnapshotPoint) (caretPoint : SnapshotPoint) =
 
         let createBlock () =
@@ -1691,7 +1770,7 @@ type VisualSelection =
                 match visualSpan with
                 | VisualSpan.Character characterSpan ->
                     let endPoint = SnapshotPointUtil.AddOneOrCurrent characterSpan.End
-                    SnapshotSpan(characterSpan.Start, endPoint) |> CharacterSpan.CreateForSpan |> VisualSpan.Character
+                    CharacterSpan(characterSpan.Start, endPoint) |> VisualSpan.Character
                 | VisualSpan.Line _ -> visualSpan
                 | VisualSpan.Block blockSpan ->
                     let width = blockSpan.Width + 1
@@ -1705,7 +1784,7 @@ type VisualSelection =
                 Path.Forward
 
         let caretPoint = TextViewUtil.GetCaretPoint textView
-        VisualSelection.Create visualSpan path caretPoint
+        VisualSelection.Create visualSpan path caretPoint 
 
     /// Create the initial Visual Selection information for the specified Kind started at 
     /// the specified point
@@ -1714,8 +1793,7 @@ type VisualSelection =
         | VisualKind.Character ->
             let characterSpan = 
                 let endPoint = SnapshotPointUtil.AddOneOrCurrent caretPoint
-                let span = SnapshotSpan(caretPoint, endPoint)
-                CharacterSpan.CreateForSpan span
+                CharacterSpan(caretPoint, endPoint)
             VisualSelection.Character (characterSpan, Path.Forward)
         | VisualKind.Line ->
             let lineRange = 
@@ -1817,23 +1895,27 @@ type CommandFlags =
     /// text change if it exists
     | LinkedWithPreviousCommand = 0x20
 
-    /// For Visual Mode commands which should reset the cursor to the original point
+    /// For Visual mode commands which should reset the cursor to the original point
     /// after completing
     | ResetCaret = 0x40
+
+    /// For Visual mode commands which should reset the anchor point to the current
+    /// anchor point of the selection
+    | ResetAnchorPoint = 0x80
 
     /// Vim allows for special handling of the 'd' command in normal mode such that it can
     /// have the pattern 'd#d'.  This flag is used to tag the 'd' command to allow such
     /// a pattern
-    | Delete = 0x80
+    | Delete = 0x100
 
     /// Vim allows for special handling of the 'y' command in normal mode such that it can
     /// have the pattern 'y#y'.  This flag is used to tag the 'd' command to allow such
     /// a pattern
-    | Yank = 0x100
+    | Yank = 0x200
 
     /// Represents an insert edit action which can be linked with other insert edit actions and
     /// hence acts with them in a repeat
-    | InsertEdit = 0x200
+    | InsertEdit = 0x400
 
 /// Data about the run of a given MotionResult
 type MotionData = {
@@ -2173,6 +2255,10 @@ type VisualCommand =
 
     /// Join the selected lines
     | JoinSelection of JoinKind
+
+    /// Invert the selection by swapping the caret and anchor points.  When true it means that block mode should
+    /// be special cased to invert the column only 
+    | InvertSelection of bool
 
     /// Move the caret to the result of the given Motion.  This movement is from a 
     /// text-object selection.  Certain motions 
@@ -3267,7 +3353,6 @@ type IVimHost =
     [<CLIEvent>]
     abstract ActiveTextViewChanged : IDelegateEvent<System.EventHandler<TextViewChangedEventArgs>>
 
-
 /// Core parts of an IVimBuffer.  Used for components which make up an IVimBuffer but
 /// need the same data provided by IVimBuffer.
 type IVimBufferData =
@@ -3278,6 +3363,12 @@ type IVimBufferData =
     /// This is the caret point at the start of the most recent visual mode session. It's
     /// the actual location of the caret vs. the anchor point.
     abstract VisualCaretStartPoint : ITrackingPoint option with get, set
+
+    /// This is the anchor point for the visual mode selection.  It is different than the anchor
+    /// point in ITextSelection.  The ITextSelection anchor point is always the start or end
+    /// of the visual selection.  While the anchor point for visual mode selection may be in 
+    /// the middle (in say line wise mode)
+    abstract VisualAnchorPoint : ITrackingPoint option with get, set
 
     /// The IJumpList associated with the IVimBuffer
     abstract JumpList : IJumpList
@@ -3550,7 +3641,7 @@ and IVimBuffer =
     abstract Name : string
 
     /// If we are in the middle of processing a "one time command" (<c-o>) then this will
-    /// hold the ModeKind which will be swiched back to after it's completed
+    /// hold the ModeKind which will be switched back to after it's completed
     abstract InOneTimeCommand : ModeKind option
 
     /// Register map for IVim.  Global to all IVimBuffer instances but provided here

@@ -52,6 +52,8 @@ type internal VisualMode
                 yield ("gP", CommandFlags.Repeatable, VisualCommand.PutOverSelection true)
                 yield ("g?", CommandFlags.Repeatable, VisualCommand.ChangeCase ChangeCharacterKind.Rot13)
                 yield ("J", CommandFlags.Repeatable, VisualCommand.JoinSelection JoinKind.RemoveEmptySpaces)
+                yield ("o", CommandFlags.Movement ||| CommandFlags.ResetAnchorPoint, VisualCommand.InvertSelection false)
+                yield ("O", CommandFlags.Movement ||| CommandFlags.ResetAnchorPoint, VisualCommand.InvertSelection true)
                 yield ("p", CommandFlags.Repeatable, VisualCommand.PutOverSelection false)
                 yield ("P", CommandFlags.Repeatable, VisualCommand.PutOverSelection false)
                 yield ("R", CommandFlags.Repeatable ||| CommandFlags.LinkedWithNextCommand, VisualCommand.ChangeLineSelection false)
@@ -188,7 +190,10 @@ type internal VisualMode
                     x.CaretPoint.Position
                 else 
                     _textView.Selection.AnchorPoint.Position.Position
-        _vimBufferData.VisualCaretStartPoint <- x.CurrentSnapshot.CreateTrackingPoint(caretPosition, PointTrackingMode.Negative) |> Some
+
+        let caretTrackingPoint = x.CurrentSnapshot.CreateTrackingPoint(caretPosition, PointTrackingMode.Negative) |> Some
+        _vimBufferData.VisualCaretStartPoint <- caretTrackingPoint
+        _vimBufferData.VisualAnchorPoint <- caretTrackingPoint
 
         _selectionTracker.Start()
 
@@ -222,6 +227,11 @@ type internal VisualMode
 
                     if Util.IsFlagSet commandRanData.CommandBinding.CommandFlags CommandFlags.ResetCaret then
                         x.ResetCaret()
+
+                    if Util.IsFlagSet commandRanData.CommandBinding.CommandFlags CommandFlags.ResetAnchorPoint then
+                        match _vimBufferData.VisualAnchorPoint |>  OptionUtil.map2 (TrackingPointUtil.GetPoint x.CurrentSnapshot) with
+                        | None -> ()
+                        | Some anchorPoint -> _selectionTracker.UpdateSelectionWithAnchorPoint anchorPoint
 
                     match commandRanData.CommandResult with
                     | CommandResult.Error ->
